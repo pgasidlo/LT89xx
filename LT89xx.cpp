@@ -12,72 +12,81 @@
 #include <SPI.h>
 #include "LT89xx.h"
 
-#define REGISTER_BITS(n) (1 << (n + 1) - 1)
+#define REGISTER_MASK(n) (1 << (n + 1) - 1)
 
-#define REGISTER_7                          7
-#define REGISTER_7_TX_EN                    (1 << 8)
-#define REGISTER_7_RX_EN                    (1 << 7)
-#define REGISTER_7_CHANNEL_MASK             REGISTER_BITS(7)
+#define REGISTER_7                           7
+#define REGISTER_7_TX_EN                     (1 << 8)
+#define REGISTER_7_RX_EN                     (1 << 7)
+#define REGISTER_7_CHANNEL_MASK              REGISTER_MASK(7)
 
-#define REGISTER_9                          9
-#define REGISTER_9_POWER_MASK               REGISTER_BITS(4)
-#define REGISTER_9_POWER_SHIFT              12
-#define REGISTER_9_GAIN_MASK                REGISTER_BITS(4)
-#define REGISTER_9_GAIN_SHIFT               7
+#define REGISTER_9                           9
+#define REGISTER_9_POWER_MASK                REGISTER_MASK(4)
+#define REGISTER_9_POWER_SHIFT               12
+#define REGISTER_9_GAIN_MASK                 REGISTER_MASK(4)
+#define REGISTER_9_GAIN_SHIFT                7
 
-#define REGISTER_35                         35
-#define REGISTER_35_POWER_DOWN              (1 << 15)
-#define REGISTER_35_SLEEP_MODE              (1 << 14)
-#define REGISTER_35_BRCLK_ON_SLEEP          (1 << 12)
-#define REGISTER_35_RETRANSMIT_TIMES_MASK   REGISTER_BITS(3)
-#define REGISTER_35_RETRANSMIT_TIMES_SHIFT  8
-#define REGISTER_35_MISO_TRI_OPT            (1 << 7)
-#define REGISTER_35_SCRAMBLE_DATA_MASK      REGISTER_BITS(6)
+#define REGISTER_35                          35
+#define REGISTER_35_POWER_DOWN               (1 << 15)
+#define REGISTER_35_SLEEP_MODE               (1 << 14)
+#define REGISTER_35_BRCLK_ON_SLEEP           (1 << 12)
+#define REGISTER_35_RETRANSMIT_TIMES_MASK    REGISTER_MASK(3)
+#define REGISTER_35_RETRANSMIT_TIMES_SHIFT   8
+#define REGISTER_35_MISO_TRI_OPT             (1 << 7)
+#define REGISTER_35_SCRAMBLE_DATA_MASK       REGISTER_MASK(6)
 
-#define REGISTER_41                         41
-#define REGISTER_41_CRC_ON                  (1 << 15)
-#define REGISTER_41_SCRAMBLE_ON             (1 << 14)
-#define REGISTER_41_PACK_LEN_EN             (1 << 13)
-#define REGISTER_41_FW_TERM_TX              (1 << 12)
-#define REGISTER_41_AUTO_ACK                (1 << 11)
-#define REGISTER_41_PKT_FIFO_POLARITY       (1 << 10)
-#define REGISTER_41_CRC_INITIAL_DATA_MASK   REGISTER_BITS(8)
+#define REGISTER_40                          40
 
-#define REGISTER_43
-#define REGISTER_43_SCAN_RSSI_EN            (1 << 15)
-#define REGISTER_43_SCAN_RSSI_EN            (1 << 15)
+#define REGISTER_41                          41
+#define REGISTER_41_CRC_ON                   (1 << 15)
+#define REGISTER_41_SCRAMBLE_ON              (1 << 14)
+#define REGISTER_41_PACK_LEN_EN              (1 << 13)
+#define REGISTER_41_FW_TERM_TX               (1 << 12)
+#define REGISTER_41_AUTO_ACK                 (1 << 11)
+#define REGISTER_41_PKT_FIFO_POLARITY        (1 << 10)
+#define REGISTER_41_CRC_INITIAL_DATA_MASK    REGISTER_MASK(8)
 
-#define REGISTER_44                         44
-#define REGISTER_44_DATARATE_MASK           REGISTER_BITS(8)
-#define REGISTER_44_DATARATE_SHIFT          8
-#define REGISTER_44_1MBPS                   (1 << 8)
-#define REGISTER_44_250KBPS                 (1 << 10)
-#define REGISTER_44_125KBPS                 (1 << 11)
-#define REGISTER_44_62KBPS                  (1 << 12)
+#define REGISTER_42                          42
+#define REGISTER_42_SCAN_RSSI_CH_NO_MASK     REGISTER_MASK(6)
+#define REGISTER_42_SCAN_RSSI_CH_NO_SHIFT    10
+#define REGISTER_42_RX_ACK_TIME_MASK         REGISTER_MASK(8)
 
-#define REGISTER_45                         45
-#define REGISTER_45_1MBPS                   0x0152 /* or 0x0080 */
-#define REGISTER_45_250KBPS                 0x0552
-#define REGISTER_45_125KBPS                 0x0552
-#define REGISTER_45_62KBPS                  0x0552
+#define REGISTER_43                          43
+#define REGISTER_43_SCAN_RSSI_EN             (1 << 15)
+#define REGISTER_43_SCAN_STRT_CH_OFFST_MASK  REGISTER_MASK(7)
+#define REGISTER_43_SCAN_STRT_CH_OFFST_SHIFT 8
+#define REGISTER_43_WAIT_RSSI_SCAN_TIM_MASK  REGISTER_MASK(8)
 
-#define REGISTER_48                         48
-#define REGISTER_48_CRC_ERROR               (1 << 15)
-#define REGISTER_48_FEC23_ERROR             (1 << 14)
-#define REGISTER_48_FRAMER_ST_MASK          REGISTER_BITS(6)
-#define REGISTER_48_FRAMER_ST_SHIFT         8
-#define REGISTER_48_SYNCWORD_RECV           (1 << 7)
-#define REGISTER_48_PKT_FLAG                (1 << 6)
-#define REGISTER_48_FIFO_FLAG               (1 << 5)
+#define REGISTER_44                          44
+#define REGISTER_44_DATARATE_MASK            REGISTER_MASK(8)
+#define REGISTER_44_DATARATE_SHIFT           8
+#define REGISTER_44_1MBPS                    (1 << 8)
+#define REGISTER_44_250KBPS                  (1 << 10)
+#define REGISTER_44_125KBPS                  (1 << 11)
+#define REGISTER_44_62KBPS                   (1 << 12)
 
-#define REGISTER_50                         50
+#define REGISTER_45                          45
+#define REGISTER_45_1MBPS                    0x0152 /* or 0x0080 */
+#define REGISTER_45_250KBPS                  0x0552
+#define REGISTER_45_125KBPS                  0x0552
+#define REGISTER_45_62KBPS                   0x0552
 
-#define REGISTER_52                         52
-#define REGISTER_52_CLR_W_PTR               (1 << 15)
-#define REGISTER_52_FIFO_WR_PTR_MASK        REGISTER_BITS(6)
-#define REGISTER_52_FIFO_WR_PTR_SHIFT       8
-#define REGISTER_52_CLR_R_PTR               (1 << 7)
-#define REGISTER_52_FIFO_RD_PTR_MASK        REGISTER_BITS(6)
+#define REGISTER_48                          48
+#define REGISTER_48_CRC_ERROR                (1 << 15)
+#define REGISTER_48_FEC23_ERROR              (1 << 14)
+#define REGISTER_48_FRAMER_ST_MASK           REGISTER_MASK(6)
+#define REGISTER_48_FRAMER_ST_SHIFT          8
+#define REGISTER_48_SYNCWORD_RECV            (1 << 7)
+#define REGISTER_48_PKT_FLAG                 (1 << 6)
+#define REGISTER_48_FIFO_FLAG                (1 << 5)
+
+#define REGISTER_50                          50
+
+#define REGISTER_52                          52
+#define REGISTER_52_CLR_W_PTR                (1 << 15)
+#define REGISTER_52_FIFO_WR_PTR_MASK         REGISTER_MASK(6)
+#define REGISTER_52_FIFO_WR_PTR_SHIFT        8
+#define REGISTER_52_CLR_R_PTR                (1 << 7)
+#define REGISTER_52_FIFO_RD_PTR_MASK         REGISTER_MASK(6)
 
 #define debug(input)   { if (_serial) _serial->print(input);   }
 #define debugln(input) { if (_serial) _serial->println(input); }
