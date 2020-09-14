@@ -16,6 +16,7 @@
 
 class LT89xx
 {
+  public:
     enum BitRate
     {
       BITRATE_UNKNOWN = 0,
@@ -28,48 +29,48 @@ class LT89xx
     enum SyncWordLen
     {
       SYNCWORD_LEN_16 = 0,
-      SYNCWORD_LEN_32,
-      SYNCWORD_LEN_48,
-      SYNCWORD_LEN_64
+      SYNCWORD_LEN_32 = 1,
+      SYNCWORD_LEN_48 = 2,
+      SYNCWORD_LEN_64 = 3
     };
 
     enum PreambleLen
     {
       PREAMBLE_LEN_1 = 1,
-      PREAMBLE_LEN_2,
-      PREAMBLE_LEN_3,
-      PREAMBLE_LEN_4,
-      PREAMBLE_LEN_5,
-      PREAMBLE_LEN_6,
-      PREAMBLE_LEN_7,
-      PREAMBLE_LEN_8,
+      PREAMBLE_LEN_2 = 2,
+      PREAMBLE_LEN_3 = 3,
+      PREAMBLE_LEN_4 = 4,
+      PREAMBLE_LEN_5 = 5,
+      PREAMBLE_LEN_6 = 6,
+      PREAMBLE_LEN_7 = 7,
+      PREAMBLE_LEN_8 = 8,
     };
 
     enum TrailerLen
     {
       TRAILER_LEN_4 = 0,
-      TRAILER_LEN_6,
-      TRAILER_LEN_8,
-      TRAILER_LEN_10,
-      TRAILER_LEN_12,
-      TRAILER_LEN_14,
-      TRAILER_LEN_16,
-      TRAILER_LEN_18
+      TRAILER_LEN_6 = 1,
+      TRAILER_LEN_8 = 2,
+      TRAILER_LEN_10 = 3,
+      TRAILER_LEN_12 = 4,
+      TRAILER_LEN_14 = 5,
+      TRAILER_LEN_16 = 6,
+      TRAILER_LEN_18 = 7
     };
 
     enum PacketType
     {
       PACKET_TYPE_NRZ = 0,
-      PACKET_TYPE_MANCHESTER,
-      PACKET_TYPE_8_10,
-      PACKET_TYPE_INTERLEAVE
+      PACKET_TYPE_MANCHESTER = 1,
+      PACKET_TYPE_8_10 = 2,
+      PACKET_TYPE_INTERLEAVE = 3
     };
 
     enum FecType
     {
       FEC_NONE = 0,
-      FEC_13,
-      FEC_23
+      FEC_13 = 1,
+      FEC_23 = 2
     };
 
     enum HardwareType
@@ -81,9 +82,9 @@ class LT89xx
 
     enum State {
       STATE_IDLE = 0,
-      STATE_TX,
-      STATE_RX,
-      STATE_SLEEP,
+      STATE_TX = 1,
+      STATE_RX = 2,
+      STATE_SLEEP = 3,
     };
 
   private:
@@ -100,7 +101,7 @@ class LT89xx
     LT89xx() {}
     LT89xx(Stream &debugStream) : _debugStream(&debugStream) {};
 
-    bool init(const uint8_t csPin, const uint8_t pktPin, const uint8_t rstPin, uint8_t channel = 0, const BitRate bitRate = BITRATE_1MBPS);
+    bool init(const uint8_t csPin, const uint8_t pktPin, const uint8_t rstPin, uint8_t channel = 0);
 
     void printRegisters();
     void printRegister(uint8_t reg);
@@ -121,16 +122,14 @@ class LT89xx
     void sleep();
 
     /* Transmiter */
-    uint8_t send(void *data, uint8_t length);
+    int8_t send(void *data, int8_t length);
 
     /* Receiver */
     bool available();
-    uint8_t receive(void *data, uint8_t maxLength);
+    int8_t receive(void *data, int8_t maxLength);
 
-    /* ISR */
-    bool availableISR();
-    bool startReceive();
-    uint8_t startSend(void *data, uint8_t length);
+    void startReceive();
+    int8_t startSend(void *data, int8_t length);
     void whatHappend(uint8_t &txDone, uint8_t &rxReady);
 
     void idle();

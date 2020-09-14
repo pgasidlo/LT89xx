@@ -12,8 +12,8 @@
 #include <SPI.h>
 #include "LT89xx.h"
 
-#define BIT_MASK(n) (1 << (n + 1) - 1)
-#define BIT_MASK_RANGE(u,l) (1 << (u - l + 2) - 1)
+#define BIT_MASK(n) ((1 << (n)) - 1)
+#define BIT_MASK_RANGE(u,l) BIT_MASK(u - l + 1)
 
 #define REGISTER_READ                           (1 << 7)
 #define REGISTER_WRITE                          0
@@ -191,12 +191,12 @@
 #define REGISTER_43_WAIT_RSSI_SCAN_TIM_SHIFT    0
 
 #define REGISTER_44                             44
-#define REGISTER_44_REGISTER_44_MASK               BIT_MASK_RANGE(15,8)
-#define REGISTER_44_REGISTER_44_SHIFT              8
-#define REGISTER_44_1MBPS                       (1 << 8)
-#define REGISTER_44_250KBPS                     (1 << 10)
-#define REGISTER_44_125KBPS                     (1 << 11)
-#define REGISTER_44_62KBPS                      (1 << 12)
+#define REGISTER_44_BITRATE_MASK                BIT_MASK_RANGE(15,8)
+#define REGISTER_44_BITRATE_SHIFT               8
+#define REGISTER_44_1MBPS                       0x01
+#define REGISTER_44_250KBPS                     0x04
+#define REGISTER_44_125KBPS                     0x08
+#define REGISTER_44_62KBPS                      0x10
 
 #define REGISTER_45                             45
 #define REGISTER_45_1MBPS                       0x0152 /* or 0x0080 */
@@ -235,7 +235,7 @@
 #define debug(input)   { if (_debugStream) _debugStream->print(input);   }
 #define debugln(input) { if (_debugStream) _debugStream->println(input); }
 
-bool LT89xx::init(const uint8_t csPin, const uint8_t pktPin, const uint8_t rstPin, const uint8_t channel, const BitRate bitRate)
+bool LT89xx::init(const uint8_t csPin, const uint8_t pktPin, const uint8_t rstPin, const uint8_t channel)
 {
   _csPin = csPin;
   _pktPin = pktPin;
@@ -249,7 +249,9 @@ bool LT89xx::init(const uint8_t csPin, const uint8_t pktPin, const uint8_t rstPi
   }
   pinMode(_pktPin, INPUT);
 
-  _init();
+  if (!_init()) {
+    return false;
+  }
 
   _hardwareType = LT8900;
   if (_setBitRate(BITRATE_62KBPS) == BITRATE_62KBPS) {
@@ -261,6 +263,8 @@ bool LT89xx::init(const uint8_t csPin, const uint8_t pktPin, const uint8_t rstPi
 
   setChannel(channel);
   idle();
+
+  return true;
 }
 
 bool LT89xx::_init()
@@ -298,21 +302,29 @@ bool LT89xx::_init()
   writeRegister(35, 0x0300);
   setSyncWord(0xdeadbeafdeadbeaf); // 36, 37, 38,39
   writeRegister(40, 0x4401);
-  writeRegister(REGISTER_41, REGISTER_41_CRC_ON | REGISTER_41_PACK_LEN_EN | REGISTER_41_FW_TERM_TX); // 41: 0xb000
+  writeRegister(REGISTER_41, REGISTER_41_CRC_ON | REGISTER_41_PACK_LEN_EN | REGISTER_41_FW_TERM_TX | REGISTER_41_AUTO_ACK); // 41: 0xb000
   writeRegister(42, 0xfdb0);
   writeRegister(43, 0x000f);
   writeRegister(44, 0x1000);
   writeRegister(45, 0x0080);
   writeRegister(50, 0x0000);
   writeRegister(52, 0x8080);
+
+  return true;
 }
 
 void LT89xx::setCurrentControl(uint8_t power, uint8_t gain)
 {
-  writeRegister(
-   REGISTER_9,
-   ((uint16_t)(power & REGISTER_9_PA_PWCTR_MASK) << REGISTER_9_PA_PWCTR_SHIFT) |
-   ((uint16_t)(gain & REGISTER_9_PA_GN_MASK) << REGISTER_9_PA_GN_SHIFT)
+  writeRegister(REGISTER_9,
+    (
+      readRegister(REGISTER_9) & ~(
+        (REGISTER_9_PA_PWCTR_MASK << REGISTER_9_PA_PWCTR_SHIFT) |
+        (REGISTER_9_PA_GN_MASK << REGISTER_9_PA_GN_SHIFT)
+      )
+    ) | (
+      (power & REGISTER_9_PA_PWCTR_MASK) << REGISTER_9_PA_PWCTR_SHIFT |
+      (gain & REGISTER_9_PA_GN_MASK) << REGISTER_9_PA_GN_SHIFT
+    )
   );
 }
 
@@ -339,6 +351,13 @@ void LT89xx::setPacketFormat(PreambleLen preambleLen, TrailerLen trailerLen, Pac
 {
   writeRegister(REGISTER_32,
     (
+      readRegister(REGISTER_32) & ~(
+       (REGISTER_32_PREAMBLE_LEN_MASK << REGISTER_32_PREAMBLE_LEN_SHIFT) |
+       (REGISTER_32_TRAILER_LEN_MASK << REGISTER_32_TRAILER_LEN_SHIFT) |
+       (REGISTER_32_DATA_PACKET_TYPE_MASK << REGISTER_32_DATA_PACKET_TYPE_SHIFT) |
+       (REGISTER_32_FEC_TYPE_MASK << REGISTER_32_FEC_TYPE_SHIFT)
+      )
+    ) | (
      (preambleLen & REGISTER_32_PREAMBLE_LEN_MASK) << REGISTER_32_PREAMBLE_LEN_SHIFT |
      (trailerLen & REGISTER_32_TRAILER_LEN_MASK) << REGISTER_32_TRAILER_LEN_SHIFT |
      (packetType & REGISTER_32_DATA_PACKET_TYPE_MASK) << REGISTER_32_DATA_PACKET_TYPE_SHIFT |
@@ -356,7 +375,13 @@ uint16_t LT89xx::readRegister(uint8_t reg)
   uint8_t low = SPI.transfer(0x00);
   SPI.endTransaction();
   digitalWrite(_csPin, HIGH);
-  return (uint16_t)(high << 8 | low);
+
+  char sbuf[32];
+  sprintf_P(sbuf, PSTR("R: %02d => %02x%02x"), reg, high, low);
+  //sprintf_P(sbuf, PSTR("W: %02d => %02x%02x (" BYTE_TO_BINARY_PATTERN " " BYTE_TO_BINARY_PATTERN ")"), reg, high, low, BYTE_TO_BINARY(high), BYTE_TO_BINARY(low));
+  debugln(sbuf);
+
+  return (uint16_t)(high << 8) | low;
 }
 
 void LT89xx::writeRegister(uint8_t reg, uint16_t data)
@@ -366,27 +391,34 @@ void LT89xx::writeRegister(uint8_t reg, uint16_t data)
 
 void LT89xx::writeRegister(uint8_t reg, uint8_t high, uint8_t low)
 {
+  char sbuf[32];
+  sprintf_P(sbuf, PSTR("W: %02d => %02x%02x"), reg, high, low);
+  //sprintf_P(sbuf, PSTR("W: %02d => %02x%02x (" BYTE_TO_BINARY_PATTERN " " BYTE_TO_BINARY_PATTERN ")"), reg, high, low, BYTE_TO_BINARY(high), BYTE_TO_BINARY(low));
+  debugln(sbuf);
+
   digitalWrite(_csPin, LOW);
   SPI.beginTransaction(SPISettings(SPI_CLOCK_DIV4, MSBFIRST, SPI_MODE1));
-  uint8_t _statusHigh = SPI.transfer(REGISTER_WRITE | (reg & REGISTER_MASK));
+  _statusHigh = SPI.transfer(REGISTER_WRITE | (reg & REGISTER_MASK));
   SPI.transfer(high);
   SPI.transfer(low);
   SPI.endTransaction();
   digitalWrite(_csPin, HIGH);
-  return _statusHigh;
 }
 
 void LT89xx::sleep()
 {
-  idle();
-  writeRegister(REGISTER_35, (readRegister(REGISTER_35) | REGISTER_35_SLEEP_MODE));
-  _state = LT89xx::STATE_SLEEP;
+  if (_state != LT89xx::STATE_SLEEP) {
+    while (readRegister(REGISTER_7) & (REGISTER_7_TX_EN | REGISTER_7_RX_EN)) {}
+    writeRegister(REGISTER_7, (readRegister(REGISTER_7) & ~(REGISTER_7_TX_EN | REGISTER_7_RX_EN)));
+    writeRegister(REGISTER_35, (readRegister(REGISTER_35) | REGISTER_35_SLEEP_MODE));
+    _state = LT89xx::STATE_SLEEP;
+  }
 }
 
 /* Transmiter */
-uint8_t LT89xx::send(void *data, uint8_t length)
+int8_t LT89xx::send(void *data, int8_t length)
 {
-  uint8_t result = startSend(data, length);
+  int8_t result = startSend(data, length);
   if (result > 0) {
     while (digitalRead(_pktPin) == LOW) {};
   }
@@ -397,14 +429,16 @@ uint8_t LT89xx::send(void *data, uint8_t length)
 bool LT89xx::available()
 {
   _startRX();
-  return (digitalRead(_pktPin) == HIGH);
+  return (digitalRead(_pktPin) != LOW);
 }
 
-uint8_t LT89xx::receive(void *data, uint8_t maxLength)
+int8_t LT89xx::receive(void *data, int8_t maxLength)
 {
-  uint8_t low, high, result, offset = 0;
+  uint8_t low, high, offset = 0;
+  int8_t result;
   do {
-    uint8_t value = readRegister(REGISTER_50);
+    uint16_t value = readRegister(REGISTER_50);
+
     high = (uint8_t)(value >> 8);
     low = (uint8_t)(value & 0xff);
     if (offset == 0) {
@@ -415,11 +449,11 @@ uint8_t LT89xx::receive(void *data, uint8_t maxLength)
       }
 
       if (high > maxLength) {
-        result = -1;
+        result = -2;
         goto END;
       }
 
-      result = high;
+      result = (int8_t)high;
 
       ((uint8_t*)data)[offset++] = low;
     } else {
@@ -433,20 +467,16 @@ uint8_t LT89xx::receive(void *data, uint8_t maxLength)
   } while (offset < result);
 
 END:
+  _state = STATE_IDLE;
   return result;
 }
 
-/* ISR */
-bool LT89xx::availableISR()
-{
-}
-
-bool LT89xx::startReceive()
+void LT89xx::startReceive()
 {
   _startRX();
 }
 
-uint8_t LT89xx::startSend(void *data, uint8_t length)
+int8_t LT89xx::startSend(void *data, int8_t length)
 {
   /*
    * We don't have access to FIFO_flag pin. We can handle only packets smaller
@@ -455,8 +485,12 @@ uint8_t LT89xx::startSend(void *data, uint8_t length)
   if (length < 1 || length > 63) {
     return -1;
   }
-  _startTX();
+
   uint8_t low, high, offset = 0;
+
+  writeRegister(REGISTER_7, 0x0000);
+  writeRegister(REGISTER_52, (readRegister(REGISTER_52) & ~REGISTER_52_CLR_W_PTR | REGISTER_52_CLR_W_PTR));
+
   do {
     if (offset == 0) {
       high = length;
@@ -467,13 +501,13 @@ uint8_t LT89xx::startSend(void *data, uint8_t length)
     }
     writeRegister(REGISTER_50, high, low);
   } while (offset < length);
+  _startTX();
   return length;
 }
 
 void LT89xx::setChannel(uint8_t channel)
 {
   _channel = channel;
-  writeRegister(REGISTER_7, (uint16_t)(_channel & REGISTER_7_RF_PLL_CH_NO_MASK) << REGISTER_7_RF_PLL_CH_NO_MASK);
 }
 
 uint8_t LT89xx::getChannel()
@@ -521,10 +555,10 @@ LT89xx::BitRate LT89xx::_setBitRate(BitRate bitRate)
       return BITRATE_UNKNOWN;
   }
 
-  writeRegister(REGISTER_44, readRegister(REGISTER_44) & ~(REGISTER_44_REGISTER_44_MASK << REGISTER_44_REGISTER_44_SHIFT) | value1);
+  writeRegister(REGISTER_44, (readRegister(REGISTER_44) & ~(REGISTER_44_BITRATE_MASK << REGISTER_44_BITRATE_SHIFT)) | value1 << REGISTER_44_BITRATE_SHIFT);
 
   /* Verify if successfully set */
-  if ((readRegister(REGISTER_44) & REGISTER_44_REGISTER_44_MASK) >> REGISTER_44_REGISTER_44_SHIFT == value1) {
+  if ((readRegister(REGISTER_44) & REGISTER_44_BITRATE_MASK) >> REGISTER_44_BITRATE_SHIFT == value1) {
     writeRegister(REGISTER_45, value2);
     return bitRate;
   }
@@ -534,7 +568,7 @@ LT89xx::BitRate LT89xx::_setBitRate(BitRate bitRate)
 
 LT89xx::BitRate LT89xx::_getBitRate()
 {
-  uint16_t value = (readRegister(REGISTER_44) & REGISTER_44_REGISTER_44_MASK) >> REGISTER_44_REGISTER_44_SHIFT;
+  uint16_t value = (readRegister(REGISTER_44) & REGISTER_44_BITRATE_MASK) >> REGISTER_44_BITRATE_SHIFT;
   switch (value)
   {
     case REGISTER_44_1MBPS:
@@ -551,7 +585,7 @@ LT89xx::BitRate LT89xx::_getBitRate()
 
 void LT89xx::printRegisters()
 {
-  const uint8_t regs[] = { 0, 1, 2, 4, 5, 7, 8, 9,10,11, 12, 13, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,41, 42, 43, 44, 45 };
+  const uint8_t regs[] = { 0, 1, 2, 4, 5, 7, 8, 9,10,11, 12, 13, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,41, 42, 43, 44, 45, 50, 52 };
   for (uint8_t i = 0; i < sizeof(regs); i++) {
     LT89xx::printRegister(regs[i]);
   }
@@ -568,49 +602,53 @@ void LT89xx::printRegister(uint8_t reg)
 void LT89xx::printStatus()
 {
   char sbuf[32];
+
+  uint16_t value7 = readRegister(REGISTER_7);
   uint8_t value48 = readRegister(REGISTER_48);
-  sprintf_P(sbuf, PSTR("CRC_ERROR: %d"), (uint8_t)(value48 & REGISTER_48_CRC_ERROR));
-  debugln(sbuf);
-  sprintf_P(sbuf, PSTR("FEC23_ERROR: %d"), (uint8_t)(value48 & REGISTER_48_FEC23_ERROR));
-  debugln(sbuf);
-  sprintf_P(sbuf, PSTR("FRAMER_ST: %02d"), (uint8_t)((value48 >> REGISTER_48_FRAMER_ST_SHIFT) & REGISTER_48_FRAMER_ST_MASK));
-  debugln(sbuf);
-  sprintf_P(sbuf, PSTR("SYNCWORD_RECV: %d"), (uint8_t)(value48 & REGISTER_48_SYNCWORD_RECV));
-  debugln(sbuf);
-  sprintf_P(sbuf, PSTR("PKT_FLAG: %d"), (uint8_t)(value48 & REGISTER_48_PKT_FLAG));
-  debugln(sbuf);
-  sprintf_P(sbuf, PSTR("FIFO_FLAG: %d"), (uint8_t)(value48 & REGISTER_48_FIFO_FLAG));
-  debugln(sbuf);
   uint8_t value52 = readRegister(REGISTER_52);
-  sprintf_P(sbuf, PSTR("FIFO_WR_PTR: %d"), (uint8_t)((value52 >> REGISTER_52_FIFO_WR_PTR_SHIFT) & REGISTER_52_FIFO_WR_PTR_MASK));
+
+  sprintf_P(sbuf, PSTR("        TX_EN: %d"), (uint8_t)(value7 & REGISTER_7_TX_EN) > 0);
   debugln(sbuf);
-  sprintf_P(sbuf, PSTR("FIFO_RD_PTR: %d"), (uint8_t)((value52 >> REGISTER_52_FIFO_RD_PTR_SHIFT) & REGISTER_52_FIFO_RD_PTR_MASK));
+  sprintf_P(sbuf, PSTR("        RX_EN: %d"), (uint8_t)(value7 & REGISTER_7_RX_EN) > 0);
+  debugln(sbuf);
+  sprintf_P(sbuf, PSTR("      CHANNEL: %d"), (uint8_t)((value7 >> REGISTER_7_RF_PLL_CH_NO_SHIFT) & REGISTER_7_RF_PLL_CH_NO_MASK));
+  debugln(sbuf);
+  sprintf_P(sbuf, PSTR("    CRC_ERROR: %d"), (uint8_t)(value48 & REGISTER_48_CRC_ERROR) > 0);
+  debugln(sbuf);
+  sprintf_P(sbuf, PSTR("  FEC23_ERROR: %d"), (uint8_t)(value48 & REGISTER_48_FEC23_ERROR) > 0);
+  debugln(sbuf);
+  sprintf_P(sbuf, PSTR("    FRAMER_ST: %02d"), (uint8_t)((value48 >> REGISTER_48_FRAMER_ST_SHIFT) & REGISTER_48_FRAMER_ST_MASK));
+  debugln(sbuf);
+  sprintf_P(sbuf, PSTR("SYNCWORD_RECV: %d"), (uint8_t)(value48 & REGISTER_48_SYNCWORD_RECV) > 0);
+  debugln(sbuf);
+  sprintf_P(sbuf, PSTR("     PKT_FLAG: %d"), (uint8_t)(value48 & REGISTER_48_PKT_FLAG) > 0);
+  debugln(sbuf);
+  sprintf_P(sbuf, PSTR("    FIFO_FLAG: %d"), (uint8_t)(value48 & REGISTER_48_FIFO_FLAG) > 0);
+  debugln(sbuf);
+  sprintf_P(sbuf, PSTR("  FIFO_WR_PTR: %d"), (uint8_t)((value52 >> REGISTER_52_FIFO_WR_PTR_SHIFT) & REGISTER_52_FIFO_WR_PTR_MASK));
+  debugln(sbuf);
+  sprintf_P(sbuf, PSTR("  FIFO_RD_PTR: %d"), (uint8_t)((value52 >> REGISTER_52_FIFO_RD_PTR_SHIFT) & REGISTER_52_FIFO_RD_PTR_MASK));
   debugln(sbuf);
 }
 
 void LT89xx::_startTX()
 {
-  if (_state != LT89xx::STATE_TX) {
-    writeRegister(REGISTER_7, (readRegister(REGISTER_7) & ~(REGISTER_7_TX_EN | REGISTER_7_RX_EN)) | REGISTER_7_TX_EN);
-    _state = LT89xx::STATE_TX;
-  }
-  writeRegister(REGISTER_52, (readRegister(REGISTER_52) | REGISTER_52_CLR_W_PTR));
+  writeRegister(REGISTER_7, (readRegister(REGISTER_7) & ~(REGISTER_7_TX_EN | REGISTER_7_RX_EN | REGISTER_7_RF_PLL_CH_NO_MASK << REGISTER_7_RF_PLL_CH_NO_SHIFT)) | REGISTER_7_TX_EN | (_channel & REGISTER_7_RF_PLL_CH_NO_MASK) << REGISTER_7_RF_PLL_CH_NO_SHIFT);
+  _state = LT89xx::STATE_TX;
 }
 
 void LT89xx::_startRX()
 {
   if (_state != LT89xx::STATE_RX) {
-    writeRegister(REGISTER_7, (readRegister(REGISTER_7) & ~(REGISTER_7_TX_EN | REGISTER_7_RX_EN)) | REGISTER_7_RX_EN);
+    writeRegister(REGISTER_7, (readRegister(REGISTER_7) & ~(REGISTER_7_TX_EN | REGISTER_7_RX_EN | REGISTER_7_RF_PLL_CH_NO_MASK << REGISTER_7_RF_PLL_CH_NO_SHIFT)) | REGISTER_7_RX_EN | (_channel & REGISTER_7_RF_PLL_CH_NO_MASK) << REGISTER_7_RF_PLL_CH_NO_SHIFT);
     _state = LT89xx::STATE_RX;
   }
 }
 
 void LT89xx::idle()
 {
-  if (_state != LT89xx::STATE_IDLE) {
-    writeRegister(REGISTER_7, (readRegister(REGISTER_7) & ~(REGISTER_7_TX_EN | REGISTER_7_RX_EN)));
-    _state = LT89xx::STATE_IDLE;
-  }
+  writeRegister(REGISTER_7, 0x0000);
+  _state = LT89xx::STATE_IDLE;
 }
 
 void LT89xx::setSyncWord(const uint64_t syncWord, SyncWordLen syncWordLen, uint8_t syncWordThreshold)
@@ -625,7 +663,7 @@ void LT89xx::setSyncWord(const uint64_t syncWord, SyncWordLen syncWordLen, uint8
     case SYNCWORD_LEN_16:
       writeRegister(REGISTER_36, syncWord);
   }
-  writeRegister(REGISTER_32, readRegister(REGISTER_32) | (uint16_t)syncWordLen << REGISTER_32_SYNCWORD_LEN_SHIFT);
+  writeRegister(REGISTER_32, readRegister(REGISTER_32) | (uint16_t)((syncWordLen & REGISTER_32_SYNCWORD_LEN_MASK) << REGISTER_32_SYNCWORD_LEN_SHIFT));
   writeRegister(REGISTER_40, readRegister(REGISTER_40) | (uint16_t)(syncWordThreshold & REGISTER_40_SYNCWORD_THRESHOLD_MASK) << REGISTER_40_SYNCWORD_THRESHOLD_SHIFT);
 }
 
