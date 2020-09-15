@@ -16,8 +16,8 @@ void setup() {
   lt.init(LT_CS_PIN, LT_PKT_PIN, LT_RST_PIN);  
   //lt.setPacketFormat(LT89xx::PREAMBLE_LEN_2, LT89xx::TRAILER_LEN_4, LT89xx::PACKET_TYPE_8_10, LT89xx::FEC_13);
   //lt.setScramble(2);
-  lt.printRegisters();
-  lt.printStatus();
+  //lt.printRegisters();
+  //lt.printStatus();
   Serial.println("SETUP: END");
   Serial.println("SEND: T - to start transmit, R - to start receive, S - status");  
 }
@@ -26,13 +26,12 @@ enum {
   MODE_NONE = 0,
   MODE_RECEIVER = 1,
   MODE_SENDER = 2,
-  MODE_SENDER5 = 3    
 };
 
 uint8_t mode = MODE_NONE;
 
 void printPacket(uint8_t *data, uint8_t length) {
-  Serial.print("PACKET = {");
+  Serial.print("{");
   char sbuf[32];
   for (int i = 0; i < length; i++) {
     sprintf_P(sbuf, PSTR("%02x"), data[i]);
@@ -44,8 +43,9 @@ void printPacket(uint8_t *data, uint8_t length) {
   Serial.println("}");
 }
 
-volatile bool _pktFlag = false;
+bool useInterrupts = false;
 
+volatile bool _pktFlag = false;
 void ltInterrupt()
 {
   _pktFlag = true;
@@ -61,12 +61,6 @@ void loop() {
       Serial.println("MODE: SENDER");       
       lt.idle();
       mode = MODE_SENDER;      
-    } else if (ch == '5') {
-      Serial.println("MODE: SENDER5");
-      attachInterrupt(digitalPinToInterrupt(LT_PKT_PIN), ltInterrupt, RISING);
-      lt.idle();
-      counter = 0;
-      mode = MODE_SENDER5;            
     } else if (ch == 'R') {
       Serial.println("MODE: RECEIVER");            
       mode = MODE_RECEIVER;
@@ -83,7 +77,7 @@ void loop() {
     }
   }
 
-  if (mode == MODE_SENDER || mode == MODE_SENDER5) {
+  if (mode == MODE_SENDER) { /* sender */
     if (_pktFlag) {
       _pktFlag = false;
       counter++;    
@@ -97,9 +91,6 @@ void loop() {
 //      }    
       
       lt.startSend(packet, sizeof(packet));      
-      if (mode == MODE_SENDER5 && counter >= 5) {
-        mode = MODE_NONE;
-      }
     }
     delay(1);
   } else if (mode == MODE_RECEIVER) { /* receiver */    
@@ -115,7 +106,7 @@ void loop() {
       if (result > 0) {
         printPacket(packet, result);
       } else if (result < 0) {
-        Serial.print("PACKET: ERROR");
+        Serial.print("ERROR");
       }      
       lt.startReceive();
     }    
