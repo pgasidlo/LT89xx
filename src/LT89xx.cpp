@@ -302,7 +302,7 @@ bool LT89xx::_init()
   writeRegister(35, 0x0300);
   setSyncWord(0xdeadbeafdeadbeaf); // 36, 37, 38,39
   writeRegister(40, 0x4401);
-  writeRegister(REGISTER_41, REGISTER_41_CRC_ON | REGISTER_41_PACK_LEN_EN | REGISTER_41_FW_TERM_TX | REGISTER_41_AUTO_ACK); // 41: 0xb000
+  writeRegister(REGISTER_41, REGISTER_41_CRC_ON | REGISTER_41_PACK_LEN_EN | REGISTER_41_FW_TERM_TX); // 41: 0xb000
   writeRegister(42, 0xfdb0);
   writeRegister(43, 0x000f);
   writeRegister(44, 0x1000);
@@ -444,12 +444,12 @@ int8_t LT89xx::receive(void *data, int8_t maxLength)
     if (offset == 0) {
 
       if ((uint16_t)(_statusHigh << 8) & (REGISTER_48_CRC_ERROR | REGISTER_48_FEC23_ERROR)) {
-        result = -1;
+        result = -2;
         goto END;
       }
 
       if (high > maxLength) {
-        result = -2;
+        result = -1;
         goto END;
       }
 
@@ -489,7 +489,7 @@ int8_t LT89xx::startSend(void *data, int8_t length)
   uint8_t low, high, offset = 0;
 
   writeRegister(REGISTER_7, 0x0000);
-  writeRegister(REGISTER_52, (readRegister(REGISTER_52) & ~REGISTER_52_CLR_W_PTR | REGISTER_52_CLR_W_PTR));
+  writeRegister(REGISTER_52, (readRegister(REGISTER_52) & ~REGISTER_52_CLR_W_PTR ) | REGISTER_52_CLR_W_PTR);
 
   do {
     if (offset == 0) {
@@ -585,18 +585,13 @@ LT89xx::BitRate LT89xx::_getBitRate()
 
 void LT89xx::printRegisters()
 {
+  char sbuf[32];
   const uint8_t regs[] = { 0, 1, 2, 4, 5, 7, 8, 9,10,11, 12, 13, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,41, 42, 43, 44, 45, 50, 52 };
   for (uint8_t i = 0; i < sizeof(regs); i++) {
-    LT89xx::printRegister(regs[i]);
+    uint16_t value = readRegister(regs[i]);
+    sprintf_P(sbuf, PSTR("%d: %02x%02x"), i, (uint8_t)(value >> 8), (uint8_t)(value & 0xff));
+    debugln(sbuf);
   }
-}
-
-void LT89xx::printRegister(uint8_t reg)
-{
-  char sbuf[32];
-  uint16_t value = readRegister(reg);
-  sprintf_P(sbuf, PSTR("%d: %02x%02x"), reg, (uint8_t)(value >> 8), (uint8_t)(value & 0xff));
-  debugln(sbuf);
 }
 
 void LT89xx::printStatus()
@@ -641,6 +636,7 @@ void LT89xx::_startRX()
 {
   if (_state != LT89xx::STATE_RX) {
     writeRegister(REGISTER_7, (readRegister(REGISTER_7) & ~(REGISTER_7_TX_EN | REGISTER_7_RX_EN | REGISTER_7_RF_PLL_CH_NO_MASK << REGISTER_7_RF_PLL_CH_NO_SHIFT)) | REGISTER_7_RX_EN | (_channel & REGISTER_7_RF_PLL_CH_NO_MASK) << REGISTER_7_RF_PLL_CH_NO_SHIFT);
+    writeRegister(REGISTER_52, (readRegister(REGISTER_52) & ~REGISTER_52_CLR_R_PTR ) | REGISTER_52_CLR_R_PTR);
     _state = LT89xx::STATE_RX;
   }
 }

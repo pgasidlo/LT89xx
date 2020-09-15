@@ -104,7 +104,6 @@ class LT89xx
     bool init(const uint8_t csPin, const uint8_t pktPin, const uint8_t rstPin, uint8_t channel = 0);
 
     void printRegisters();
-    void printRegister(uint8_t reg);
     void printStatus();
 
     void setCurrentControl(uint8_t power, uint8_t gain);
